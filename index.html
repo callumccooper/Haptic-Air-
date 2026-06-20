@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAPTIC AIR //</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000000;
+            color: #ffffff;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 20px;
+            margin: 0;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        h1 {
+            font-size: 1.2rem;
+            color: #ffffff;
+            border-bottom: 1px solid #ffffff;
+            padding-bottom: 8px;
+            margin: 0 0 15px 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            flex-shrink: 0;
+        }
+
+        .header-container {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 15px;
+            flex-shrink: 0;
+        }
+
+        button {
+            background: #ffffff;
+            color: #000000;
+            border: none;
+            padding: 8px 16px;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: #cccccc;
+        }
+
+        #status {
+            font-size: 0.8rem;
+            color: #ffffff;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            flex: 1;
+            min-height: 0; /* Dynamic inner container track overflow fix */
+        }
+
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        .section {
+            border: 1px solid #ffffff;
+            padding: 15px;
+            background: #000000;
+        }
+
+        /* Let settings panel absorb remaining column adjustments if needed */
+        .left-column .section:last-child {
+            overflow-y: auto;
+        }
+
+        .section h3 {
+            margin: 0 0 12px 0;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #ffffff;
+        }
+
+        .label {
+            font-size: 0.72rem;
+            color: #ffffff;
+            display: block;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .value {
+            font-size: 1.4rem;
+            margin-bottom: 15px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .value:last-child {
+            margin-bottom: 0;
+        }
+
+        .right-column {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        .canvas-section {
+            border: 1px solid #ffffff;
+            padding: 15px;
+            background: #000000;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .canvas-section h3 {
+            margin: 0;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #ffffff;
+        }
+
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            margin-top: 10px;
+            min-height: 0;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+        }
+
+        .slider-group {
+            margin-bottom: 12px;
+        }
+        .slider-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .slider-group input[type="range"] {
+            width: 100%;
+            background: #ffffff;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 2px;
+            outline: none;
+            margin-top: 6px;
+        }
+
+        .slider-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 8px;
+            height: 16px;
+            background: #ffffff;
+            cursor: pointer;
+            border: 1px solid #000000;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            cursor: pointer;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            accent-color: #ffffff;
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+
+        .select-container {
+            margin-bottom: 12px;
+        }
+
+        select {
+            width: 100%;
+            background: #000000;
+            color: #ffffff;
+            border: 1px solid #ffffff;
+            padding: 6px;
+            font-family: 'Courier New', Courier, monospace;
+            text-transform: uppercase;
+            outline: none;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+
+        .motor-indicator-container {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .motor-bar {
+            height: 16px;
+            border: 1px solid #ffffff;
+            background: #000000;
+            position: relative;
+        }
+
+        .motor-fill {
+            height: 100%;
+            background: #ffffff;
+            width: 0%;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>HAPTIC AIR //</h1>
+
+    <div class="header-container">
+        <button id="connect-btn">START & CONNECT USB</button>
+        <div id="status">STATUS: AUDIO DEAD / SERIAL DISCONNECTED</div>
+    </div>
+
+    <div class="layout">
+        <div class="left-column">
+            <div class="section">
+                <h3>SENSOR DATA</h3>
+                
+                <span class="label">TVOC GAS READOUT (PARTICLE QUANTITY)</span>
+                <div id="tvoc-val" class="value">0 ppb</div>
+
+                <span class="label">HAND ACCELERATION VELOCITY (SCANNER DEFLECTION)</span>
+                <div id="motion-val" class="value">0.00</div>
+
+                <span class="label">TACTILE FEEDBACK CAPACITY (DUTY)</span>
+                <div id="pwm-val" class="value">0%</div>
+            </div>
+
+            <div class="section">
+                <h3>SETTINGS</h3>
+
+                <div class="select-container">
+                    <span class="label">ENGINE FEEDBACK MODE</span>
+                    <select id="engine-mode">
+                        <option value="canvas">SPATIAL SCANNER (CANVAS)</option>
+                        <option value="probability">STOCHASTIC PROBABILITY (RNG)</option>
+                    </select>
+                </div>
+                
+                <div class="checkbox-container" id="sweep-toggle-wrap">
+                    <input type="checkbox" id="test-sweep-checkbox">
+                    <label for="test-sweep-checkbox" class="label" style="margin-bottom:0; cursor:pointer;">ENABLE TEST SWEEP</label>
+                </div>
+
+                <div class="slider-group" id="deadzone-wrap">
+                    <span class="label">DEADZONE THRESHOLD: <span id="sens-label">16000</span></span>
+                    <input type="range" id="sens-slider" min="5000" max="35000" step="1000" value="16000">
+                </div>
+
+                <div class="slider-group">
+                    <span class="label">GAS DISPLAY GAIN: <span id="gas-gain-label">1.0</span>x</span>
+                    <input type="range" id="gas-gain-slider" min="0.0" max="10.0" step="0.1" value="1.0">
+                </div>
+
+                <div class="slider-group">
+                    <span class="label">TOTAL MOTOR GAIN: <span id="gain-label">100</span>%</span>
+                    <input type="range" id="gain-slider" min="10" max="100" step="5" value="100">
+                </div>
+            </div>
+        </div>
+
+        <div class="right-column">
+            <div class="canvas-section">
+                <h3>PARTICLE MAP</h3>
+                <div id="canvas-container">
+                    <canvas id="soup-canvas"></canvas>
+                </div>
+            </div>
+
+            <div class="section" style="padding: 12px 20px;">
+                <h3>CHANNELS (M1 - M5)</h3>
+                <div class="motor-indicator-container">
+                    <div class="motor-bar"><div id="f1" class="motor-fill"></div></div>
+                    <div class="motor-bar"><div id="f2" class="motor-fill"></div></div>
+                    <div class="motor-bar"><div id="f3" class="motor-fill"></div></div>
+                    <div class="motor-bar"><div id="f4" class="motor-fill"></div></div>
+                    <div class="motor-bar"><div id="f5" class="motor-fill"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let serialPort, writer, audioCtx;
+        
+        const connectBtn = document.getElementById('connect-btn');
+        const statusText = document.getElementById('status');
+        const tvocVal = document.getElementById('tvoc-val');
+        const motionVal = document.getElementById('motion-val');
+        const pwmVal = document.getElementById('pwm-val');
+        
+        const engineModeSelect = document.getElementById('engine-mode');
+        const testSweepCheckbox = document.getElementById('test-sweep-checkbox');
+        const sweepToggleWrap = document.getElementById('sweep-toggle-wrap');
+        const deadzoneWrap = document.getElementById('deadzone-wrap');
+        
+        const sensSlider = document.getElementById('sens-slider');
+        const gasGainSlider = document.getElementById('gas-gain-slider');
+        const gainSlider = document.getElementById('gain-slider');
+        const sensLabel = document.getElementById('sens-label');
+        const gasGainLabel = document.getElementById('gas-gain-label');
+        const gainLabel = document.getElementById('gain-label');
+        const fingerFills = [document.getElementById('f1'), document.getElementById('f2'), document.getElementById('f3'), document.getElementById('f4'), document.getElementById('f5')];
+
+        const canvas = document.getElementById('soup-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let masterParticles = [];
+        const TOTAL_POOL_CAPACITY = 1000;
+        for (let i = 0; i < TOTAL_POOL_CAPACITY; i++) {
+            masterParticles.push({
+                x: Math.random(), 
+                y: Math.random(),
+                vx: (Math.random() - 0.5) * 0.0004,
+                vy: (Math.random() - 0.5) * 0.0004,
+                lastHitTime: 0, 
+                alpha: 0 
+            });
+        }
+
+        let scannerX = 0;
+        let lastTime = performance.now();
+        let autopilotProgress = 0;
+        let currentTvoc = 0;
+        let currentMotion = 0; 
+        
+        let visualMotorLevels = [0, 0, 0, 0, 0];
+        let activeAsterisks = [false, false, false, false, false];
+        let channelCooldowns = [0, 0, 0, 0, 0]; 
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function triggerAudioBuzz(frequencyScale) {
+            if (!audioCtx) return;
+            let osc = audioCtx.createOscillator();
+            let gainNode = audioCtx.createGain();
+            
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(50 + (frequencyScale * 15), audioCtx.currentTime); 
+            
+            gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.03);
+        }
+
+        engineModeSelect.addEventListener('change', () => {
+            if(engineModeSelect.value === 'probability') {
+                sweepToggleWrap.style.display = 'none';
+                deadzoneWrap.style.display = 'none';
+            } else {
+                sweepToggleWrap.style.display = 'flex';
+                deadzoneWrap.style.display = 'block';
+            }
+            resizeCanvas();
+        });
+
+        connectBtn.addEventListener('click', async () => {
+            initAudio();
+            statusText.innerText = "STATUS: INITIALIZING PORT...";
+            if ('serial' in navigator) {
+                try {
+                    serialPort = await navigator.serial.requestPort();
+                    await serialPort.open({ baudRate: 115200 });
+                    
+                    connectBtn.style.display = 'none';
+                    statusText.innerText = "STATUS: LIVE // STREAMING CORE CONSOLE DATA";
+                    statusText.style.color = "#ffffff";
+
+                    const textEncoder = new TextEncoderStream();
+                    textEncoder.readable.pipeTo(serialPort.writable);
+                    writer = textEncoder.writable.getWriter();
+
+                    const textDecoder = new TextDecoderStream();
+                    serialPort.readable.pipeTo(textDecoder.writable);
+                    const reader = textDecoder.readable.getReader();
+
+                    let buffer = "";
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        buffer += value;
+                        let lines = buffer.split("\n");
+                        buffer = lines.pop();
+
+                        for (let line of lines) {
+                            if (line.trim()) parseTelemetry(line.trim());
+                        }
+                    }
+                } catch (err) {
+                    statusText.innerText = `STATUS: ERR [${err.message.toUpperCase()}]`;
+                }
+            }
+        });
+
+        function parseTelemetry(data) {
+            const parts = data.split(',');
+            if (parts.length === 3) {
+                currentTvoc = parseInt(parts[0]);
+                currentMotion = parseFloat(parts[1]); 
+                const pwm = parseInt(parts[2]);
+                const pwmPercent = Math.min(Math.round((pwm / 100) * 100), 100);
+
+                tvocVal.innerText = `${currentTvoc} ppb`;
+                motionVal.innerText = currentMotion.toFixed(2);
+                pwmVal.innerText = `${pwmPercent}%`;
+            }
+        }
+
+        async function sendParams() {
+            if (writer) {
+                await writer.write(`SET:${sensSlider.value},${gainSlider.value}\n`);
+            }
+        }
+        sensSlider.addEventListener('input', () => { sensLabel.innerText = sensSlider.value; sendParams(); });
+        gasGainSlider.addEventListener('input', () => { gasGainLabel.innerText = gasGainSlider.value; });
+        gainSlider.addEventListener('input', () => { gainLabel.innerText = gainSlider.value; sendParams(); });
+
+        function updateSimulation() {
+            let now = performance.now();
+            let deltaTime = (now - lastTime) / 1000;
+            lastTime = now;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const modifier = parseFloat(gasGainSlider.value);
+            let baselineFloor = (modifier === 0.0) ? 0 : 35;
+            const visibilityCutoffIndex = baselineFloor + Math.floor((currentTvoc * modifier) / 1.2);
+
+            const activeMode = engineModeSelect.value;
+
+            for (let i = 0; i < 5; i++) {
+                activeAsterisks[i] = false;
+                channelCooldowns[i] = Math.max(0, channelCooldowns[i] - (deltaTime * 1000));
+            }
+
+            // --- MODE 1: SPATIAL CANVAS SCANNED DRIVER ---
+            if (activeMode === 'canvas') {
+                if (scannerX === 0) scannerX = canvas.width / 2;
+
+                if (testSweepCheckbox.checked) {
+                    autopilotProgress += deltaTime / 10.0; 
+                    let triWave = Math.abs((autopilotProgress % 2) - 1); 
+                    scannerX = triWave * canvas.width;
+                } else {
+                    let dynamicVelocityTarget = (canvas.width / 2) + (currentMotion * (canvas.width / 2) * 1.2);
+                    dynamicVelocityTarget = Math.max(15, Math.min(dynamicVelocityTarget, canvas.width - 15));
+                    scannerX += (dynamicVelocityTarget - scannerX) * 0.25; 
+                }
+
+                let isGloveActivelyMoving = testSweepCheckbox.checked || (Math.abs(currentMotion) > 0.015);
+
+                masterParticles.forEach((p, idx) => {
+                    p.x += p.vx; p.y += p.vy;
+                    if (p.x < 0) p.x += 1.0; if (p.x > 1.0) p.x -= 1.0;
+                    if (p.y < 0) p.y += 1.0; if (p.y > 1.0) p.y -= 1.0;
+
+                    let pixelX = p.x * canvas.width;
+                    let pixelY = p.y * canvas.height;
+                    let isTargetVisible = idx < visibilityCutoffIndex;
+
+                    if (isTargetVisible) p.alpha = Math.min(p.alpha + deltaTime * 2.5, 1.0);
+                    else p.alpha = Math.max(p.alpha - deltaTime * 2.5, 0.0);
+
+                    let isCollisionAllowed = isTargetVisible && (p.alpha > 0.90);
+
+                    if (isGloveActivelyMoving && isCollisionAllowed && Math.abs(pixelX - scannerX) < 3.5) {
+                        if (now - p.lastHitTime > 400) {
+                            p.lastHitTime = now;
+                            let sectionIndex = Math.floor(p.y * 5);
+                            sectionIndex = Math.max(0, Math.min(sectionIndex, 4));
+
+                            triggerAudioBuzz(5 - sectionIndex);
+                            activeAsterisks[sectionIndex] = true;
+                            visualMotorLevels[sectionIndex] = 100;
+                            
+                            if (writer) writer.write(`HIT:${sectionIndex + 1}\n`);
+                        }
+                    }
+
+                    if (p.alpha > 0.01) {
+                        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+                        ctx.fillRect(pixelX, pixelY, 1.5, 1.5);
+                    }
+                });
+
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(scannerX, 0);
+                ctx.lineTo(scannerX, canvas.height);
+                ctx.stroke();
+
+            // --- MODE 2: MOTION-GATED STOCHASTIC PROBABILITY ---
+            } else if (activeMode === 'probability') {
+                masterParticles.forEach((p, idx) => {
+                    p.x += p.vx; p.y += p.vy;
+                    if (p.x < 0) p.x += 1.0; if (p.x > 1.0) p.x -= 1.0;
+                    if (p.y < 0) p.y += 1.0; if (p.y > 1.0) p.y -= 1.0;
+                    
+                    let isTargetVisible = idx < visibilityCutoffIndex;
+                    p.alpha = isTargetVisible ? Math.min(p.alpha + deltaTime * 2.5, 0.3) : Math.max(p.alpha - deltaTime * 2.5, 0.0);
+                    
+                    if (p.alpha > 0.01) {
+                        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+                        ctx.fillRect(p.x * canvas.width, p.y * canvas.height, 1.5, 1.5);
+                    }
+                });
+
+                let velocityIntensity = Math.abs(currentMotion);
+                if (velocityIntensity < 0.015) {
+                    velocityIntensity = 0;
+                }
+
+                let baseGasDensity = (currentTvoc * modifier) / 6000;
+                let finalProbabilityThreshold = baseGasDensity * velocityIntensity;
+                finalProbabilityThreshold = Math.min(Math.max(finalProbabilityThreshold, 0), 0.25);
+
+                for (let i = 0; i < 5; i++) {
+                    if (channelCooldowns[i] === 0 && velocityIntensity > 0) {
+                        if (Math.random() < finalProbabilityThreshold) {
+                            triggerAudioBuzz(5 - i);
+                            activeAsterisks[i] = true;
+                            visualMotorLevels[i] = 100;
+                            channelCooldowns[i] = 150; 
+                            
+                            if (writer) {
+                                writer.write(`HIT:${i + 1}\n`);
+                            }
+                        }
+                    }
+                }
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.font = '11px "Courier New", monospace';
+                ctx.fillText(`// VELOCITY ACCELERATION GATING: ${velocityIntensity.toFixed(3)}`, 20, 30);
+                ctx.fillText(`// ENGINE PROBABILITY THRESHOLD: ${(finalProbabilityThreshold * 100).toFixed(1)}%`, 20, 48);
+            }
+
+            for(let i=0; i<5; i++) {
+                visualMotorLevels[i] = Math.max(visualMotorLevels[i] - (deltaTime * 300), 0);
+                fingerFills[i].style.width = `${visualMotorLevels[i]}%`;
+            }
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '10px "Courier New", monospace';
+            
+            for (let i = 0; i < 5; i++) {
+                let textY = (canvas.height / 5) * i + (canvas.height / 10) + 3;
+                let textX = (activeMode === 'canvas') ? scannerX : 15;
+                let textOffset = (activeMode === 'canvas' && scannerX > canvas.width - 55) ? -45 : 8;
+                
+                let markerText = `M${i+1}`;
+                if (activeAsterisks[i] || visualMotorLevels[i] > 60) {
+                    markerText += " *";
+                }
+                
+                ctx.fillText(markerText, textX + textOffset, textY);
+            }
+
+            requestAnimationFrame(updateSimulation);
+        }
+
+        requestAnimationFrame(updateSimulation);
+    </script>
+</body>
+</html>
