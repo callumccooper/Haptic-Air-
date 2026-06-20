@@ -66,7 +66,7 @@
             grid-template-columns: 350px 1fr;
             gap: 20px;
             flex: 1;
-            min-height: 0; /* Dynamic inner container track overflow fix */
+            min-height: 0;
         }
 
         .left-column {
@@ -82,7 +82,6 @@
             background: #000000;
         }
 
-        /* Let settings panel absorb remaining column adjustments if needed */
         .left-column .section:last-child {
             overflow-y: auto;
         }
@@ -341,8 +340,9 @@
         const ctx = canvas.getContext('2d');
         
         function resizeCanvas() {
-            canvas.width = canvas.parentElement.clientWidth;
-            canvas.height = canvas.parentElement.clientHeight;
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
         }
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
@@ -369,6 +369,9 @@
         let visualMotorLevels = [0, 0, 0, 0, 0];
         let activeAsterisks = [false, false, false, false, false];
         let channelCooldowns = [0, 0, 0, 0, 0]; 
+        
+        let latestDiceRolls = [0, 0, 0, 0, 0];
+        let latestHitFlags = [false, false, false, false, false];
 
         function initAudio() {
             if (!audioCtx) {
@@ -480,10 +483,27 @@
 
             for (let i = 0; i < 5; i++) {
                 activeAsterisks[i] = false;
+                latestHitFlags[i] = false;
                 channelCooldowns[i] = Math.max(0, channelCooldowns[i] - (deltaTime * 1000));
             }
 
-            // --- MODE 1: SPATIAL CANVAS SCANNED DRIVER ---
+            // Particles Background Loop
+            masterParticles.forEach((p, idx) => {
+                p.x += p.vx; p.y += p.vy;
+                if (p.x < 0) p.x += 1.0; if (p.x > 1.0) p.x -= 1.0;
+                if (p.y < 0) p.y += 1.0; if (p.y > 1.0) p.y -= 1.0;
+
+                let isTargetVisible = idx < visibilityCutoffIndex;
+                if (isTargetVisible) p.alpha = Math.min(p.alpha + deltaTime * 2.5, 1.0);
+                else p.alpha = Math.max(p.alpha - deltaTime * 2.5, 0.0);
+
+                if (p.alpha > 0.01) {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+                    ctx.fillRect(p.x * canvas.width, p.y * canvas.height, 1.5, 1.5);
+                }
+            });
+
+            // --- CANVAS MODE ---
             if (activeMode === 'canvas') {
                 if (scannerX === 0) scannerX = canvas.width / 2;
 
@@ -500,18 +520,8 @@
                 let isGloveActivelyMoving = testSweepCheckbox.checked || (Math.abs(currentMotion) > 0.015);
 
                 masterParticles.forEach((p, idx) => {
-                    p.x += p.vx; p.y += p.vy;
-                    if (p.x < 0) p.x += 1.0; if (p.x > 1.0) p.x -= 1.0;
-                    if (p.y < 0) p.y += 1.0; if (p.y > 1.0) p.y -= 1.0;
-
                     let pixelX = p.x * canvas.width;
-                    let pixelY = p.y * canvas.height;
-                    let isTargetVisible = idx < visibilityCutoffIndex;
-
-                    if (isTargetVisible) p.alpha = Math.min(p.alpha + deltaTime * 2.5, 1.0);
-                    else p.alpha = Math.max(p.alpha - deltaTime * 2.5, 0.0);
-
-                    let isCollisionAllowed = isTargetVisible && (p.alpha > 0.90);
+                    let isCollisionAllowed = (idx < visibilityCutoffIndex) && (p.alpha > 0.90);
 
                     if (isGloveActivelyMoving && isCollisionAllowed && Math.abs(pixelX - scannerX) < 3.5) {
                         if (now - p.lastHitTime > 400) {
@@ -526,11 +536,6 @@
                             if (writer) writer.write(`HIT:${sectionIndex + 1}\n`);
                         }
                     }
-
-                    if (p.alpha > 0.01) {
-                        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
-                        ctx.fillRect(pixelX, pixelY, 1.5, 1.5);
-                    }
                 });
 
                 ctx.strokeStyle = '#ffffff';
@@ -540,50 +545,99 @@
                 ctx.lineTo(scannerX, canvas.height);
                 ctx.stroke();
 
-            // --- MODE 2: MOTION-GATED STOCHASTIC PROBABILITY ---
+            // --- PROBABILITY VALUES MODE ---
             } else if (activeMode === 'probability') {
-                masterParticles.forEach((p, idx) => {
-                    p.x += p.vx; p.y += p.vy;
-                    if (p.x < 0) p.x += 1.0; if (p.x > 1.0) p.x -= 1.0;
-                    if (p.y < 0) p.y += 1.0; if (p.y > 1.0) p.y -= 1.0;
-                    
-                    let isTargetVisible = idx < visibilityCutoffIndex;
-                    p.alpha = isTargetVisible ? Math.min(p.alpha + deltaTime * 2.5, 0.3) : Math.max(p.alpha - deltaTime * 2.5, 0.0);
-                    
-                    if (p.alpha > 0.01) {
-                        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
-                        ctx.fillRect(p.x * canvas.width, p.y * canvas.height, 1.5, 1.5);
-                    }
-                });
-
                 let velocityIntensity = Math.abs(currentMotion);
-                if (velocityIntensity < 0.015) {
+                
+                // HARD HARDWARE NOISE FLOOR GATE: Clears structural jitter/drift when sitting still
+                if (velocityIntensity < 0.04) {
                     velocityIntensity = 0;
                 }
 
-                let baseGasDensity = (currentTvoc * modifier) / 6000;
-                let finalProbabilityThreshold = baseGasDensity * velocityIntensity;
-                finalProbabilityThreshold = Math.min(Math.max(finalProbabilityThreshold, 0), 0.25);
+                let baseGasDensity = (currentTvoc * modifier) / 800.0;
+                let targetHitRange = 0.05 + baseGasDensity; 
+                let finalProbabilityThreshold = targetHitRange * velocityIntensity;
+                finalProbabilityThreshold = Math.min(Math.max(finalProbabilityThreshold, 0), 0.40);
 
                 for (let i = 0; i < 5; i++) {
                     if (channelCooldowns[i] === 0 && velocityIntensity > 0) {
-                        if (Math.random() < finalProbabilityThreshold) {
+                        let roll = Math.random();
+                        latestDiceRolls[i] = roll; 
+
+                        if (roll < finalProbabilityThreshold) {
                             triggerAudioBuzz(5 - i);
                             activeAsterisks[i] = true;
+                            latestHitFlags[i] = true;
                             visualMotorLevels[i] = 100;
-                            channelCooldowns[i] = 150; 
+                            channelCooldowns[i] = 120; 
                             
                             if (writer) {
                                 writer.write(`HIT:${i + 1}\n`);
                             }
                         }
+                    } else if (velocityIntensity === 0) {
+                        latestDiceRolls[i] = 0; 
                     }
                 }
 
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                // FIXED HUD DIMENSIONS
+                const boxW = 520;
+                const boxH = 180;
+                const boxX = canvas.width - boxW - 15;
+                const boxY = 15;
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+                ctx.fillRect(boxX, boxY, boxW, boxH);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+                ctx.fillStyle = '#ffffff';
                 ctx.font = '11px "Courier New", monospace';
-                ctx.fillText(`// VELOCITY ACCELERATION GATING: ${velocityIntensity.toFixed(3)}`, 20, 30);
-                ctx.fillText(`// ENGINE PROBABILITY THRESHOLD: ${(finalProbabilityThreshold * 100).toFixed(1)}%`, 20, 48);
+                ctx.fillText(`// PROBABILITY VALUES`, boxX + 15, boxY + 25);
+                ctx.fillText(`SPEED: x${velocityIntensity.toFixed(3)}  |  HIT RANGE: < ${(finalProbabilityThreshold * 100).toFixed(1)}%`, boxX + 15, boxY + 42);
+                ctx.fillText(`------------------------------------------------------------`, boxX + 15, boxY + 54);
+
+                for (let i = 0; i < 5; i++) {
+                    let rowY = boxY + 74 + (i * 19);
+                    let rollVal = latestDiceRolls[i];
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(`M${i+1} [${rollVal.toFixed(3)}] `, boxX + 15, rowY);
+
+                    let totalChars = 22; 
+                    let rangeLimitCharIndex = Math.floor(finalProbabilityThreshold * totalChars);
+                    let asteriskCharIndex = Math.floor(rollVal * totalChars);
+
+                    rangeLimitCharIndex = Math.max(0, Math.min(rangeLimitCharIndex, totalChars));
+                    asteriskCharIndex = Math.max(0, Math.min(asteriskCharIndex, totalChars - 1));
+
+                    let graphicLine = "0.0|";
+                    for (let c = 0; c < totalChars; c++) {
+                        if (c === asteriskCharIndex) {
+                            graphicLine += "*";
+                        } else if (c < rangeLimitCharIndex) {
+                            graphicLine += "="; 
+                        } else {
+                            graphicLine += "-"; 
+                        }
+                    }
+                    graphicLine += "|1.0";
+
+                    ctx.fillStyle = (visualMotorLevels[i] > 50) ? '#ffffff' : '#888888';
+                    ctx.fillText(graphicLine, boxX + 110, rowY);
+
+                    if (latestHitFlags[i]) {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillText(` [ ! ] HIT`, boxX + 345, rowY);
+                    } else if (velocityIntensity === 0) {
+                        ctx.fillStyle = '#444444';
+                        ctx.fillText(` [ . ] IDLE`, boxX + 345, rowY);
+                    } else {
+                        ctx.fillStyle = '#555555';
+                        ctx.fillText(` [ - ] MISS`, boxX + 345, rowY);
+                    }
+                }
             }
 
             for(let i=0; i<5; i++) {
@@ -593,7 +647,6 @@
 
             ctx.fillStyle = '#ffffff';
             ctx.font = '10px "Courier New", monospace';
-            
             for (let i = 0; i < 5; i++) {
                 let textY = (canvas.height / 5) * i + (canvas.height / 10) + 3;
                 let textX = (activeMode === 'canvas') ? scannerX : 15;
@@ -603,6 +656,9 @@
                 if (activeAsterisks[i] || visualMotorLevels[i] > 60) {
                     markerText += " *";
                 }
+                
+                // FIXED BOUNDARY PROTECTION CHECK: Completely clips all ghost channel markers in probability mode
+                if (activeMode === 'probability') continue;
                 
                 ctx.fillText(markerText, textX + textOffset, textY);
             }
